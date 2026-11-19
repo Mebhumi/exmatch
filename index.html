@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exec Match – ส่งการ์ด LINE</title>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+body{margin:0;font-family:system-ui,-apple-system,'Sukhumvit Set','Noto Sans Thai',sans-serif;background:#F4F6F9;color:#0F172A;display:flex;min-height:100vh;align-items:center;justify-content:center}
+.box{max-width:360px;width:100%;margin:24px;background:#fff;border-radius:18px;padding:24px;text-align:center;box-shadow:0 4px 20px rgba(11,31,58,.08)}
+.big{font-size:44px}h1{font-size:18px;margin:10px 0 6px}p{color:#64748B;font-size:14px;margin:6px 0}
+button{margin-top:16px;width:100%;border:0;border-radius:12px;padding:14px;font:inherit;font-weight:700;font-size:16px;background:#06C755;color:#fff}
+.err{color:#B91C1C}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="big" id="icon">📅</div>
+  <h1 id="title">กำลังเปิด LINE…</h1>
+  <p id="msg"></p>
+  <button id="send" style="display:none">เลือกแชตเพื่อส่งการ์ด</button>
+</div>
+<script>
+// Generic sender for Exec Match. All data arrives in the URL, so this page never needs editing.
+// Params: lid (LIFF ID), k (i = invite, f = final), t (title), d (dates), h (time), l (location), u (link)
+function params() {
+  const out = new URLSearchParams(location.search);
+  const st = out.get('liff.state');
+  if (st) { try { new URLSearchParams(decodeURIComponent(st).replace(/^[^?]*\?/, '')).forEach((v, k) => { if (!out.has(k)) out.set(k, v); }); } catch (e) {} }
+  return out;
+}
+const P = params();
+const $ = id => document.getElementById(id);
+function show(icon, title, msg, isErr) { $('icon').textContent = icon; $('title').textContent = title; $('msg').textContent = msg || ''; $('msg').className = isErr ? 'err' : ''; }
+
+function card() {
+  const final = P.get('k') === 'f';
+  const title = (P.get('t') || 'นัดประชุม').slice(0, 80);
+  const link = P.get('u') || '';
+  const row = (label, value) => value ? { type: 'box', layout: 'baseline', spacing: 'md', contents: [
+    { type: 'text', text: label, size: 'sm', color: '#8A94A6', flex: 0 },
+    { type: 'text', text: value, size: 'sm', color: '#0F172A', wrap: true, flex: 1 } ] } : null;
+  return {
+    type: 'flex',
+    altText: (final ? '🔒 ยืนยันเวลานัด: ' : '📅 ขอเชิญกรอกเวลาว่าง: ') + title,
+    contents: {
+      type: 'bubble',
+      header: { type: 'box', layout: 'vertical', backgroundColor: final ? '#C9A24B' : '#0B1F3A', paddingAll: '16px', contents: [
+        { type: 'text', text: final ? '🔒 ยืนยันเวลานัดประชุม' : '📅 ขอเชิญกรอกเวลาว่าง', color: final ? '#0B1F3A' : '#FFFFFF', size: 'sm', weight: 'bold' },
+        { type: 'text', text: title, color: final ? '#0B1F3A' : '#FFFFFF', size: 'lg', weight: 'bold', wrap: true, margin: 'sm' } ] },
+      body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '16px', contents: [
+        row('วันที่', P.get('d')), row('เวลา', P.get('h')), row('สถานที่', P.get('l')),
+        final ? null : { type: 'text', text: 'กดปุ่ม เลือกชื่อ แล้วแตะช่วงที่ว่าง — ไม่ต้องล็อกอิน', size: 'xs', color: '#8A94A6', wrap: true, margin: 'md' }
+      ].filter(Boolean) },
+      footer: link ? { type: 'box', layout: 'vertical', paddingAll: '12px', contents: [
+        { type: 'button', style: 'primary', color: final ? '#0B1F3A' : '#06C755', height: 'md',
+          action: { type: 'uri', label: final ? 'ดูรายละเอียดนัด' : '📅 กรอกเวลาว่าง', uri: link } } ] } : undefined
+    }
+  };
+}
+
+async function share() {
+  try {
+    const res = await liff.shareTargetPicker([card()], { isMultiple: true });
+    if (res) { show('✅', 'ส่งการ์ดแล้ว', 'ปิดหน้านี้ได้เลย'); setTimeout(() => { try { liff.closeWindow(); } catch (e) {} }, 900); }
+    else { show('↩️', 'ยกเลิกการส่ง', 'กดปุ่มด้านล่างเพื่อเลือกแชตอีกครั้ง'); $('send').style.display = 'block'; }
+  } catch (e) { show('⚠️', 'ส่งไม่สำเร็จ', String(e && e.message || e), true); $('send').style.display = 'block'; }
+}
+
+(async () => {
+  const lid = P.get('lid');
+  if (!lid) { show('⚠️', 'ลิงก์ไม่ครบ', 'เปิดหน้านี้จากปุ่ม “ส่งเป็นการ์ด LINE” ในแอป Exec Match', true); return; }
+  try {
+    await liff.init({ liffId: lid });
+    if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+    if (!liff.isApiAvailable('shareTargetPicker')) { show('⚠️', 'ส่งการ์ดไม่ได้', 'กรุณาอัปเดตแอป LINE และเปิดใช้ shareTargetPicker ใน LINE Developers', true); return; }
+    show('📅', P.get('t') || 'นัดประชุม', 'เลือกแชตหรือกลุ่มที่จะส่งการ์ด');
+    $('send').style.display = 'block';
+    $('send').addEventListener('click', share);
+    share();
+  } catch (e) { show('⚠️', 'เปิด LINE ไม่สำเร็จ', String(e && e.message || e), true); }
+})();
+</script>
+</body>
+</html>
